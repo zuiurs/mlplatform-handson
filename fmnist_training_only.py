@@ -108,7 +108,7 @@ def evaluate(
   description='This pipeline provides Training/Serving for Fashion MNIST'
 )
 def pipeline(
-        # Add some parameters
+        epochs='5'
 ):
     # Write code here!
     print('Write code here!')

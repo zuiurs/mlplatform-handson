@@ -147,23 +147,23 @@ def pipeline(
         # If defined as int, it will occur warning.
         epochs='5'
 ):
-    load_data_task = load_data()
+    load_data_op = load_data()
 
-    preprocess_task = preprocess(
-            train_images=load_data_task.outputs['train_images'],
-            test_images=load_data_task.outputs['test_images']
+    preprocess_op = preprocess(
+            train_images=load_data_op.outputs['train_images'],
+            test_images=load_data_op.outputs['test_images']
     )
 
-    train_task = train(
+    train_op = train(
             epochs=epochs,
-            processed_train_images=preprocess_task.outputs['processed_train_images'],
-            train_labels=load_data_task.outputs['train_labels']
+            processed_train_images=preprocess_op.outputs['processed_train_images'],
+            train_labels=load_data_op.outputs['train_labels']
     )
 
     evaluate(
-            model=train_task.outputs['model'],
-            processed_test_images=preprocess_task.outputs['processed_test_images'],
-            test_labels=load_data_task.outputs['test_labels']
+            model=train_op.outputs['model'],
+            processed_test_images=preprocess_op.outputs['processed_test_images'],
+            test_labels=load_data_op.outputs['test_labels']
     )
 
 

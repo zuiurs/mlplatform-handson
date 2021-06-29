@@ -1,0 +1,809 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  generateName: fashion-mnist-pipeline-
+  annotations: {pipelines.kubeflow.org/kfp_sdk_version: 1.4.0, pipelines.kubeflow.org/pipeline_compilation_time: '2021-06-29T12:53:17.854525',
+    pipelines.kubeflow.org/pipeline_spec: '{"description": "This pipeline provides
+      Training/Serving for Fashion MNIST", "inputs": [{"name": "project_id"}, {"name":
+      "bucket_name"}, {"default": "5", "name": "epochs", "optional": true}, {"default":
+      "0.8", "name": "threshold", "optional": true}, {"default": "kfp", "name": "model_directory",
+      "optional": true}], "name": "Fashion MNIST Pipeline"}'}
+  labels: {pipelines.kubeflow.org/kfp_sdk_version: 1.4.0}
+spec:
+  entrypoint: fashion-mnist-pipeline
+  templates:
+  - name: check
+    container:
+      args: [--accuracy, '{{inputs.parameters.evaluate-Output}}', --threshold, '{{inputs.parameters.threshold}}',
+        '----output-paths', /tmp/outputs/Output/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def check(
+                accuracy,
+                threshold
+        ):
+            print(f'check start')
+            return accuracy > float(threshold)
+
+        def _serialize_bool(bool_value: bool) -> str:
+            if isinstance(bool_value, str):
+                return bool_value
+            if not isinstance(bool_value, bool):
+                raise TypeError('Value "{}" has type "{}" instead of bool.'.format(str(bool_value), str(type(bool_value))))
+            return str(bool_value)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Check', description='')
+        _parser.add_argument("--accuracy", dest="accuracy", type=float, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--threshold", dest="threshold", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=1)
+        _parsed_args = vars(_parser.parse_args())
+        _output_files = _parsed_args.pop("_output_paths", [])
+
+        _outputs = check(**_parsed_args)
+
+        _outputs = [_outputs]
+
+        _output_serializers = [
+            _serialize_bool,
+
+        ]
+
+        import os
+        for idx, output_file in enumerate(_output_files):
+            try:
+                os.makedirs(os.path.dirname(output_file))
+            except OSError:
+                pass
+            with open(output_file, 'w') as f:
+                f.write(_output_serializers[idx](_outputs[idx]))
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: evaluate-Output}
+      - {name: threshold}
+    outputs:
+      parameters:
+      - name: check-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: check-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--accuracy", {"inputValue": "accuracy"}, "--threshold", {"inputValue":
+          "threshold"}, "----output-paths", {"outputPath": "Output"}], "command":
+          ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def check(\n        accuracy,\n        threshold\n):\n    print(f''check
+          start'')\n    return accuracy > float(threshold)\n\ndef _serialize_bool(bool_value:
+          bool) -> str:\n    if isinstance(bool_value, str):\n        return bool_value\n    if
+          not isinstance(bool_value, bool):\n        raise TypeError(''Value \"{}\"
+          has type \"{}\" instead of bool.''.format(str(bool_value), str(type(bool_value))))\n    return
+          str(bool_value)\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Check'',
+          description='''')\n_parser.add_argument(\"--accuracy\", dest=\"accuracy\",
+          type=float, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--threshold\",
+          dest=\"threshold\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"----output-paths\",
+          dest=\"_output_paths\", type=str, nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files
+          = _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = check(**_parsed_args)\n\n_outputs
+          = [_outputs]\n\n_output_serializers = [\n    _serialize_bool,\n\n]\n\nimport
+          os\nfor idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n    except
+          OSError:\n        pass\n    with open(output_file, ''w'') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "accuracy", "type": "Float"},
+          {"name": "threshold", "type": "String"}], "name": "Check", "outputs": [{"name":
+          "Output", "type": "Boolean"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"accuracy": "{{inputs.parameters.evaluate-Output}}",
+          "threshold": "{{inputs.parameters.threshold}}"}'}
+  - name: condition-1
+    inputs:
+      parameters:
+      - {name: bucket_name}
+      - {name: model_directory}
+      - {name: project_id}
+      artifacts:
+      - {name: train-model}
+    dag:
+      tasks:
+      - name: kubeflow-serve-model-using-kfserving
+        template: kubeflow-serve-model-using-kfserving
+        dependencies: [upload]
+        arguments:
+          parameters:
+          - {name: upload-Output, value: '{{tasks.upload.outputs.parameters.upload-Output}}'}
+      - name: upload
+        template: upload
+        arguments:
+          parameters:
+          - {name: bucket_name, value: '{{inputs.parameters.bucket_name}}'}
+          - {name: model_directory, value: '{{inputs.parameters.model_directory}}'}
+          - {name: project_id, value: '{{inputs.parameters.project_id}}'}
+          artifacts:
+          - {name: train-model, from: '{{inputs.artifacts.train-model}}'}
+  - name: envcheck
+    container:
+      args: []
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def envcheck():
+            import os
+            for k, v in os.environ.items():
+                print(f'{k}: {v}')
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Envcheck', description='')
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = envcheck(**_parsed_args)
+      image: python:3.7
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": [], "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\"
+          \"$0\" > \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def
+          envcheck():\n    import os\n    for k, v in os.environ.items():\n        print(f''{k}:
+          {v}'')\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Envcheck'',
+          description='''')\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = envcheck(**_parsed_args)\n"], "image": "python:3.7"}}, "name": "Envcheck"}',
+        pipelines.kubeflow.org/component_ref: '{}'}
+  - name: evaluate
+    container:
+      args: [--model, /tmp/inputs/model/data, --processed-test-images, /tmp/inputs/processed_test_images/data,
+        --test-labels, /tmp/inputs/test_labels/data, '----output-paths', /tmp/outputs/Output/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def evaluate(
+                model_path,
+                processed_test_images_path,
+                test_labels_path
+        ):
+            import subprocess
+            import tempfile
+            import zipfile
+            subprocess.run(['pip', 'install', 'numpy', 'tensorflow'])
+            from tensorflow import keras
+            import numpy as np
+
+            test_images = np.load(processed_test_images_path)
+            test_labels = np.load(test_labels_path)
+
+            model_dir = tempfile.mkdtemp()
+            with zipfile.ZipFile(model_path) as z:
+                z.extractall(model_dir)
+
+            model = keras.models.load_model(model_dir)
+            loss, acc = model.evaluate(test_images, test_labels)
+            print(f'Loss: {loss}\nAccuracy: {acc}')
+
+            return acc
+
+        def _serialize_float(float_value: float) -> str:
+            if isinstance(float_value, str):
+                return float_value
+            if not isinstance(float_value, (float, int)):
+                raise TypeError('Value "{}" has type "{}" instead of float.'.format(str(float_value), str(type(float_value))))
+            return str(float_value)
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Evaluate', description='')
+        _parser.add_argument("--model", dest="model_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--processed-test-images", dest="processed_test_images_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--test-labels", dest="test_labels_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=1)
+        _parsed_args = vars(_parser.parse_args())
+        _output_files = _parsed_args.pop("_output_paths", [])
+
+        _outputs = evaluate(**_parsed_args)
+
+        _outputs = [_outputs]
+
+        _output_serializers = [
+            _serialize_float,
+
+        ]
+
+        import os
+        for idx, output_file in enumerate(_output_files):
+            try:
+                os.makedirs(os.path.dirname(output_file))
+            except OSError:
+                pass
+            with open(output_file, 'w') as f:
+                f.write(_output_serializers[idx](_outputs[idx]))
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: train-model, path: /tmp/inputs/model/data}
+      - {name: preprocess-processed_test_images, path: /tmp/inputs/processed_test_images/data}
+      - {name: load-data-test_labels, path: /tmp/inputs/test_labels/data}
+    outputs:
+      parameters:
+      - name: evaluate-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: evaluate-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--model", {"inputPath": "model"}, "--processed-test-images",
+          {"inputPath": "processed_test_images"}, "--test-labels", {"inputPath": "test_labels"},
+          "----output-paths", {"outputPath": "Output"}], "command": ["sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def evaluate(\n        model_path,\n        processed_test_images_path,\n        test_labels_path\n):\n    import
+          subprocess\n    import tempfile\n    import zipfile\n    subprocess.run([''pip'',
+          ''install'', ''numpy'', ''tensorflow''])\n    from tensorflow import keras\n    import
+          numpy as np\n\n    test_images = np.load(processed_test_images_path)\n    test_labels
+          = np.load(test_labels_path)\n\n    model_dir = tempfile.mkdtemp()\n    with
+          zipfile.ZipFile(model_path) as z:\n        z.extractall(model_dir)\n\n    model
+          = keras.models.load_model(model_dir)\n    loss, acc = model.evaluate(test_images,
+          test_labels)\n    print(f''Loss: {loss}\\nAccuracy: {acc}'')\n\n    return
+          acc\n\ndef _serialize_float(float_value: float) -> str:\n    if isinstance(float_value,
+          str):\n        return float_value\n    if not isinstance(float_value, (float,
+          int)):\n        raise TypeError(''Value \"{}\" has type \"{}\" instead of
+          float.''.format(str(float_value), str(type(float_value))))\n    return str(float_value)\n\nimport
+          argparse\n_parser = argparse.ArgumentParser(prog=''Evaluate'', description='''')\n_parser.add_argument(\"--model\",
+          dest=\"model_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--processed-test-images\",
+          dest=\"processed_test_images_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-labels\",
+          dest=\"test_labels_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"----output-paths\",
+          dest=\"_output_paths\", type=str, nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files
+          = _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = evaluate(**_parsed_args)\n\n_outputs
+          = [_outputs]\n\n_output_serializers = [\n    _serialize_float,\n\n]\n\nimport
+          os\nfor idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n    except
+          OSError:\n        pass\n    with open(output_file, ''w'') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "model", "type": "zip"}, {"name":
+          "processed_test_images", "type": "npy"}, {"name": "test_labels", "type":
+          "npy"}], "name": "Evaluate", "outputs": [{"name": "Output", "type": "Float"}]}',
+        pipelines.kubeflow.org/component_ref: '{}'}
+  - name: fashion-mnist-pipeline
+    inputs:
+      parameters:
+      - {name: bucket_name}
+      - {name: epochs}
+      - {name: model_directory}
+      - {name: project_id}
+      - {name: threshold}
+    dag:
+      tasks:
+      - name: check
+        template: check
+        dependencies: [evaluate]
+        arguments:
+          parameters:
+          - {name: evaluate-Output, value: '{{tasks.evaluate.outputs.parameters.evaluate-Output}}'}
+          - {name: threshold, value: '{{inputs.parameters.threshold}}'}
+      - name: condition-1
+        template: condition-1
+        when: '"{{tasks.check.outputs.parameters.check-Output}}" == "True"'
+        dependencies: [check, train]
+        arguments:
+          parameters:
+          - {name: bucket_name, value: '{{inputs.parameters.bucket_name}}'}
+          - {name: model_directory, value: '{{inputs.parameters.model_directory}}'}
+          - {name: project_id, value: '{{inputs.parameters.project_id}}'}
+          artifacts:
+          - {name: train-model, from: '{{tasks.train.outputs.artifacts.train-model}}'}
+      - {name: envcheck, template: envcheck}
+      - name: evaluate
+        template: evaluate
+        dependencies: [load-data, preprocess, train]
+        arguments:
+          artifacts:
+          - {name: load-data-test_labels, from: '{{tasks.load-data.outputs.artifacts.load-data-test_labels}}'}
+          - {name: preprocess-processed_test_images, from: '{{tasks.preprocess.outputs.artifacts.preprocess-processed_test_images}}'}
+          - {name: train-model, from: '{{tasks.train.outputs.artifacts.train-model}}'}
+      - {name: load-data, template: load-data}
+      - name: preprocess
+        template: preprocess
+        dependencies: [load-data]
+        arguments:
+          artifacts:
+          - {name: load-data-test_images, from: '{{tasks.load-data.outputs.artifacts.load-data-test_images}}'}
+          - {name: load-data-train_images, from: '{{tasks.load-data.outputs.artifacts.load-data-train_images}}'}
+      - name: train
+        template: train
+        dependencies: [load-data, preprocess]
+        arguments:
+          parameters:
+          - {name: epochs, value: '{{inputs.parameters.epochs}}'}
+          artifacts:
+          - {name: load-data-train_labels, from: '{{tasks.load-data.outputs.artifacts.load-data-train_labels}}'}
+          - {name: preprocess-processed_train_images, from: '{{tasks.preprocess.outputs.artifacts.preprocess-processed_train_images}}'}
+  - name: kubeflow-serve-model-using-kfserving
+    container:
+      args:
+      - -u
+      - kfservingdeployer.py
+      - --action
+      - apply
+      - --model-name
+      - fmnist
+      - --model-uri
+      - '{{inputs.parameters.upload-Output}}'
+      - --canary-traffic-percent
+      - '100'
+      - --namespace
+      - dev
+      - --framework
+      - tensorflow
+      - --custom-model-spec
+      - '{}'
+      - --autoscaling-target
+      - '0'
+      - --service-account
+      - default-editor
+      - --enable-istio-sidecar
+      - "True"
+      - --output-path
+      - /tmp/outputs/InferenceService_Status/data
+      - --inferenceservice-yaml
+      - '{}'
+      - --watch-timeout
+      - '300'
+      - --min-replicas
+      - '-1'
+      - --max-replicas
+      - '-1'
+      - --request-timeout
+      - '60'
+      command: [python]
+      image: quay.io/aipipeline/kfserving-component:v0.5.1
+    inputs:
+      parameters:
+      - {name: upload-Output}
+    outputs:
+      artifacts:
+      - {name: kubeflow-serve-model-using-kfserving-InferenceService-Status, path: /tmp/outputs/InferenceService_Status/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"description": "Serve
+          Models using Kubeflow KFServing", "implementation": {"container": {"args":
+          ["-u", "kfservingdeployer.py", "--action", {"inputValue": "Action"}, "--model-name",
+          {"inputValue": "Model Name"}, "--model-uri", {"inputValue": "Model URI"},
+          "--canary-traffic-percent", {"inputValue": "Canary Traffic Percent"}, "--namespace",
+          {"inputValue": "Namespace"}, "--framework", {"inputValue": "Framework"},
+          "--custom-model-spec", {"inputValue": "Custom Model Spec"}, "--autoscaling-target",
+          {"inputValue": "Autoscaling Target"}, "--service-account", {"inputValue":
+          "Service Account"}, "--enable-istio-sidecar", {"inputValue": "Enable Istio
+          Sidecar"}, "--output-path", {"outputPath": "InferenceService Status"}, "--inferenceservice-yaml",
+          {"inputValue": "InferenceService YAML"}, "--watch-timeout", {"inputValue":
+          "Watch Timeout"}, "--min-replicas", {"inputValue": "Min Replicas"}, "--max-replicas",
+          {"inputValue": "Max Replicas"}, "--request-timeout", {"inputValue": "Request
+          Timeout"}], "command": ["python"], "image": "quay.io/aipipeline/kfserving-component:v0.5.1"}},
+          "inputs": [{"default": "create", "description": "Action to execute on KFServing",
+          "name": "Action", "type": "String"}, {"default": "", "description": "Name
+          to give to the deployed model", "name": "Model Name", "type": "String"},
+          {"default": "", "description": "Path of the S3 or GCS compatible directory
+          containing the model.", "name": "Model URI", "type": "String"}, {"default":
+          "100", "description": "The traffic split percentage between the candidate
+          model and the last ready model", "name": "Canary Traffic Percent", "type":
+          "String"}, {"default": "", "description": "Kubernetes namespace where the
+          KFServing service is deployed.", "name": "Namespace", "type": "String"},
+          {"default": "", "description": "Machine Learning Framework for Model Serving.",
+          "name": "Framework", "type": "String"}, {"default": "{}", "description":
+          "Custom model runtime container spec in JSON", "name": "Custom Model Spec",
+          "type": "String"}, {"default": "0", "description": "Autoscaling Target Number",
+          "name": "Autoscaling Target", "type": "String"}, {"default": "", "description":
+          "ServiceAccount to use to run the InferenceService pod", "name": "Service
+          Account", "type": "String"}, {"default": "True", "description": "Whether
+          to enable istio sidecar injection", "name": "Enable Istio Sidecar", "type":
+          "Bool"}, {"default": "{}", "description": "Raw InferenceService serialized
+          YAML for deployment", "name": "InferenceService YAML", "type": "String"},
+          {"default": "300", "description": "Timeout seconds for watching until InferenceService
+          becomes ready.", "name": "Watch Timeout", "type": "String"}, {"default":
+          "-1", "description": "Minimum number of InferenceService replicas", "name":
+          "Min Replicas", "type": "String"}, {"default": "-1", "description": "Maximum
+          number of InferenceService replicas", "name": "Max Replicas", "type": "String"},
+          {"default": "60", "description": "Specifies the number of seconds to wait
+          before timing out a request to the component.", "name": "Request Timeout",
+          "type": "String"}], "name": "Kubeflow - Serve Model using KFServing", "outputs":
+          [{"description": "Status JSON output of InferenceService", "name": "InferenceService
+          Status", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{"digest":
+          "84f27d18805744db98e4d08804ea3c0e6ca5daa1a3a90dd057b5323f19d9dd2c", "url":
+          "https://raw.githubusercontent.com/kubeflow/pipelines/master/components/kubeflow/kfserving/component.yaml"}',
+        pipelines.kubeflow.org/arguments.parameters: '{"Action": "apply", "Autoscaling
+          Target": "0", "Canary Traffic Percent": "100", "Custom Model Spec": "{}",
+          "Enable Istio Sidecar": "True", "Framework": "tensorflow", "InferenceService
+          YAML": "{}", "Max Replicas": "-1", "Min Replicas": "-1", "Model Name": "fmnist",
+          "Model URI": "{{inputs.parameters.upload-Output}}", "Namespace": "dev",
+          "Request Timeout": "60", "Service Account": "default-editor", "Watch Timeout":
+          "300"}'}
+  - name: load-data
+    container:
+      args: [--train-images, /tmp/outputs/train_images/data, --train-labels, /tmp/outputs/train_labels/data,
+        --test-images, /tmp/outputs/test_images/data, --test-labels, /tmp/outputs/test_labels/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n \
+        \   os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+        \ndef load_data(\n        train_images_path,\n        train_labels_path,\n\
+        \        test_images_path,\n        test_labels_path\n):\n    import os\n\
+        \    import subprocess\n    subprocess.run(['pip', 'install', 'tensorflow',\
+        \ 'numpy'])\n    from tensorflow import keras\n    import numpy as np\n\n\
+        \    fashion_mnist = keras.datasets.fashion_mnist\n    (train_images, train_labels),\
+        \ (test_images, test_labels) = fashion_mnist.load_data()\n\n    # np.save()\
+        \ will automatically give the extension .npy,\n    # so change it back to\
+        \ match OutputPath.\n    np.save(train_images_path, train_images)\n    os.rename(f'{train_images_path}.npy',\
+        \ train_images_path)\n    np.save(train_labels_path, train_labels)\n    os.rename(f'{train_labels_path}.npy',\
+        \ train_labels_path)\n    np.save(test_images_path, test_images)\n    os.rename(f'{test_images_path}.npy',\
+        \ test_images_path)\n    np.save(test_labels_path, test_labels)\n    os.rename(f'{test_labels_path}.npy',\
+        \ test_labels_path)\n    print(f'Train Images: {train_images_path}\\nTrain\
+        \ Labels: {train_labels_path}\\n'\n            + f'Test Images: {test_images_path}\\\
+        nTest Labels: {test_labels_path}') \n\nimport argparse\n_parser = argparse.ArgumentParser(prog='Load\
+        \ data', description='')\n_parser.add_argument(\"--train-images\", dest=\"\
+        train_images_path\", type=_make_parent_dirs_and_return_path, required=True,\
+        \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--train-labels\", dest=\"\
+        train_labels_path\", type=_make_parent_dirs_and_return_path, required=True,\
+        \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-images\", dest=\"\
+        test_images_path\", type=_make_parent_dirs_and_return_path, required=True,\
+        \ default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-labels\", dest=\"\
+        test_labels_path\", type=_make_parent_dirs_and_return_path, required=True,\
+        \ default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n\
+        _outputs = load_data(**_parsed_args)\n"
+      image: python:3.7
+    outputs:
+      artifacts:
+      - {name: load-data-test_images, path: /tmp/outputs/test_images/data}
+      - {name: load-data-test_labels, path: /tmp/outputs/test_labels/data}
+      - {name: load-data-train_images, path: /tmp/outputs/train_images/data}
+      - {name: load-data-train_labels, path: /tmp/outputs/train_labels/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--train-images", {"outputPath": "train_images"}, "--train-labels",
+          {"outputPath": "train_labels"}, "--test-images", {"outputPath": "test_images"},
+          "--test-labels", {"outputPath": "test_labels"}], "command": ["sh", "-ec",
+          "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef load_data(\n        train_images_path,\n        train_labels_path,\n        test_images_path,\n        test_labels_path\n):\n    import
+          os\n    import subprocess\n    subprocess.run([''pip'', ''install'', ''tensorflow'',
+          ''numpy''])\n    from tensorflow import keras\n    import numpy as np\n\n    fashion_mnist
+          = keras.datasets.fashion_mnist\n    (train_images, train_labels), (test_images,
+          test_labels) = fashion_mnist.load_data()\n\n    # np.save() will automatically
+          give the extension .npy,\n    # so change it back to match OutputPath.\n    np.save(train_images_path,
+          train_images)\n    os.rename(f''{train_images_path}.npy'', train_images_path)\n    np.save(train_labels_path,
+          train_labels)\n    os.rename(f''{train_labels_path}.npy'', train_labels_path)\n    np.save(test_images_path,
+          test_images)\n    os.rename(f''{test_images_path}.npy'', test_images_path)\n    np.save(test_labels_path,
+          test_labels)\n    os.rename(f''{test_labels_path}.npy'', test_labels_path)\n    print(f''Train
+          Images: {train_images_path}\\nTrain Labels: {train_labels_path}\\n''\n            +
+          f''Test Images: {test_images_path}\\nTest Labels: {test_labels_path}'')
+          \n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Load data'',
+          description='''')\n_parser.add_argument(\"--train-images\", dest=\"train_images_path\",
+          type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--train-labels\",
+          dest=\"train_labels_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-images\", dest=\"test_images_path\",
+          type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-labels\",
+          dest=\"test_labels_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = load_data(**_parsed_args)\n"], "image": "python:3.7"}}, "name": "Load
+          data", "outputs": [{"name": "train_images", "type": "npy"}, {"name": "train_labels",
+          "type": "npy"}, {"name": "test_images", "type": "npy"}, {"name": "test_labels",
+          "type": "npy"}]}', pipelines.kubeflow.org/component_ref: '{}'}
+  - name: preprocess
+    container:
+      args: [--train-images, /tmp/inputs/train_images/data, --test-images, /tmp/inputs/test_images/data,
+        --processed-train-images, /tmp/outputs/processed_train_images/data, --processed-test-images,
+        /tmp/outputs/processed_test_images/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def _make_parent_dirs_and_return_path(file_path: str):
+            import os
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            return file_path
+
+        def preprocess(
+                train_images_path,
+                test_images_path,
+                processed_train_images_path,
+                processed_test_images_path
+        ):
+            import os
+            import subprocess
+            subprocess.run(['pip', 'install', 'numpy'])
+            import numpy as np
+
+            train_images = np.load(train_images_path)
+            test_images = np.load(test_images_path)
+
+            train_images = train_images / 255.0
+            test_images = test_images / 255.0
+
+            train_images = train_images.reshape(train_images.shape[0], 28, 28, 1)
+            test_images = test_images.reshape(test_images.shape[0], 28, 28, 1)
+
+            np.save(processed_train_images_path, train_images)
+            os.rename(f'{processed_train_images_path}.npy', processed_train_images_path)
+            np.save(processed_test_images_path, test_images)
+            os.rename(f'{processed_test_images_path}.npy', processed_test_images_path)
+            print(f'Preprocessed Train Images: {processed_train_images_path}')
+            print(f'Preprocessed Test Images: {processed_test_images_path}')
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Preprocess', description='')
+        _parser.add_argument("--train-images", dest="train_images_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--test-images", dest="test_images_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--processed-train-images", dest="processed_train_images_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--processed-test-images", dest="processed_test_images_path", type=_make_parent_dirs_and_return_path, required=True, default=argparse.SUPPRESS)
+        _parsed_args = vars(_parser.parse_args())
+
+        _outputs = preprocess(**_parsed_args)
+      image: python:3.7
+    inputs:
+      artifacts:
+      - {name: load-data-test_images, path: /tmp/inputs/test_images/data}
+      - {name: load-data-train_images, path: /tmp/inputs/train_images/data}
+    outputs:
+      artifacts:
+      - {name: preprocess-processed_test_images, path: /tmp/outputs/processed_test_images/data}
+      - {name: preprocess-processed_train_images, path: /tmp/outputs/processed_train_images/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--train-images", {"inputPath": "train_images"}, "--test-images",
+          {"inputPath": "test_images"}, "--processed-train-images", {"outputPath":
+          "processed_train_images"}, "--processed-test-images", {"outputPath": "processed_test_images"}],
+          "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" >
+          \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef preprocess(\n        train_images_path,\n        test_images_path,\n        processed_train_images_path,\n        processed_test_images_path\n):\n    import
+          os\n    import subprocess\n    subprocess.run([''pip'', ''install'', ''numpy''])\n    import
+          numpy as np\n\n    train_images = np.load(train_images_path)\n    test_images
+          = np.load(test_images_path)\n\n    train_images = train_images / 255.0\n    test_images
+          = test_images / 255.0\n\n    train_images = train_images.reshape(train_images.shape[0],
+          28, 28, 1)\n    test_images = test_images.reshape(test_images.shape[0],
+          28, 28, 1)\n\n    np.save(processed_train_images_path, train_images)\n    os.rename(f''{processed_train_images_path}.npy'',
+          processed_train_images_path)\n    np.save(processed_test_images_path, test_images)\n    os.rename(f''{processed_test_images_path}.npy'',
+          processed_test_images_path)\n    print(f''Preprocessed Train Images: {processed_train_images_path}'')\n    print(f''Preprocessed
+          Test Images: {processed_test_images_path}'')\n\nimport argparse\n_parser
+          = argparse.ArgumentParser(prog=''Preprocess'', description='''')\n_parser.add_argument(\"--train-images\",
+          dest=\"train_images_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--test-images\",
+          dest=\"test_images_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--processed-train-images\",
+          dest=\"processed_train_images_path\", type=_make_parent_dirs_and_return_path,
+          required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--processed-test-images\",
+          dest=\"processed_test_images_path\", type=_make_parent_dirs_and_return_path,
+          required=True, default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = preprocess(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"name":
+          "train_images", "type": "npy"}, {"name": "test_images", "type": "npy"}],
+          "name": "Preprocess", "outputs": [{"name": "processed_train_images", "type":
+          "npy"}, {"name": "processed_test_images", "type": "npy"}]}', pipelines.kubeflow.org/component_ref: '{}'}
+  - name: train
+    container:
+      args: [--epochs, '{{inputs.parameters.epochs}}', --processed-train-images, /tmp/inputs/processed_train_images/data,
+        --train-labels, /tmp/inputs/train_labels/data, --model, /tmp/outputs/model/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - "def _make_parent_dirs_and_return_path(file_path: str):\n    import os\n \
+        \   os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return file_path\n\
+        \ndef train(\n        epochs,\n        processed_train_images_path,\n    \
+        \    train_labels_path,\n        model_path\n):\n    import subprocess\n \
+        \   import shutil\n    import glob\n    import tempfile\n    subprocess.run(['pip',\
+        \ 'install', 'numpy', 'tensorflow'])\n    import tensorflow as tf\n    from\
+        \ tensorflow import keras\n    import numpy as np\n\n    model = keras.Sequential([\n\
+        \        keras.layers.Conv2D(input_shape=(28,28,1), filters=8, kernel_size=3,\
+        \ \n            strides=2, activation='relu', name='Conv1'),\n        keras.layers.Flatten(),\n\
+        \        keras.layers.Dense(10, activation=tf.nn.softmax, name='Softmax')\n\
+        \    ])\n    model.summary()\n\n    model.compile(optimizer='adam',\n    \
+        \        loss='sparse_categorical_crossentropy',\n            metrics=['accuracy'])\n\
+        \n    train_images = np.load(processed_train_images_path)\n    train_labels\
+        \ = np.load(train_labels_path)\n\n    model.fit(train_images, train_labels,\
+        \ epochs=epochs)\n\n    model_dir = tempfile.mkdtemp()\n    keras.models.save_model(model,\
+        \ model_dir, save_format='tf')\n\n    print('[Model Directory]')\n    files\
+        \ = glob.glob(model_dir + '/*')\n    for f in files:\n        print(f)\n\n\
+        \    shutil.make_archive('model', 'zip', root_dir=model_dir)\n    # shutil.make_archive()\
+        \ will automatically give the extension .zip,\n    # so change it back to\
+        \ match OutputPath.\n    shutil.move('model.zip', model_path)\n\nimport argparse\n\
+        _parser = argparse.ArgumentParser(prog='Train', description='')\n_parser.add_argument(\"\
+        --epochs\", dest=\"epochs\", type=int, required=True, default=argparse.SUPPRESS)\n\
+        _parser.add_argument(\"--processed-train-images\", dest=\"processed_train_images_path\"\
+        , type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"\
+        --train-labels\", dest=\"train_labels_path\", type=str, required=True, default=argparse.SUPPRESS)\n\
+        _parser.add_argument(\"--model\", dest=\"model_path\", type=_make_parent_dirs_and_return_path,\
+        \ required=True, default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\
+        \n_outputs = train(**_parsed_args)\n"
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: epochs}
+      artifacts:
+      - {name: preprocess-processed_train_images, path: /tmp/inputs/processed_train_images/data}
+      - {name: load-data-train_labels, path: /tmp/inputs/train_labels/data}
+    outputs:
+      artifacts:
+      - {name: train-model, path: /tmp/outputs/model/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--epochs", {"inputValue": "epochs"}, "--processed-train-images",
+          {"inputPath": "processed_train_images"}, "--train-labels", {"inputPath":
+          "train_labels"}, "--model", {"outputPath": "model"}], "command": ["sh",
+          "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" > \"$program_path\"\npython3
+          -u \"$program_path\" \"$@\"\n", "def _make_parent_dirs_and_return_path(file_path:
+          str):\n    import os\n    os.makedirs(os.path.dirname(file_path), exist_ok=True)\n    return
+          file_path\n\ndef train(\n        epochs,\n        processed_train_images_path,\n        train_labels_path,\n        model_path\n):\n    import
+          subprocess\n    import shutil\n    import glob\n    import tempfile\n    subprocess.run([''pip'',
+          ''install'', ''numpy'', ''tensorflow''])\n    import tensorflow as tf\n    from
+          tensorflow import keras\n    import numpy as np\n\n    model = keras.Sequential([\n        keras.layers.Conv2D(input_shape=(28,28,1),
+          filters=8, kernel_size=3, \n            strides=2, activation=''relu'',
+          name=''Conv1''),\n        keras.layers.Flatten(),\n        keras.layers.Dense(10,
+          activation=tf.nn.softmax, name=''Softmax'')\n    ])\n    model.summary()\n\n    model.compile(optimizer=''adam'',\n            loss=''sparse_categorical_crossentropy'',\n            metrics=[''accuracy''])\n\n    train_images
+          = np.load(processed_train_images_path)\n    train_labels = np.load(train_labels_path)\n\n    model.fit(train_images,
+          train_labels, epochs=epochs)\n\n    model_dir = tempfile.mkdtemp()\n    keras.models.save_model(model,
+          model_dir, save_format=''tf'')\n\n    print(''[Model Directory]'')\n    files
+          = glob.glob(model_dir + ''/*'')\n    for f in files:\n        print(f)\n\n    shutil.make_archive(''model'',
+          ''zip'', root_dir=model_dir)\n    # shutil.make_archive() will automatically
+          give the extension .zip,\n    # so change it back to match OutputPath.\n    shutil.move(''model.zip'',
+          model_path)\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Train'',
+          description='''')\n_parser.add_argument(\"--epochs\", dest=\"epochs\", type=int,
+          required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--processed-train-images\",
+          dest=\"processed_train_images_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--train-labels\",
+          dest=\"train_labels_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--model\",
+          dest=\"model_path\", type=_make_parent_dirs_and_return_path, required=True,
+          default=argparse.SUPPRESS)\n_parsed_args = vars(_parser.parse_args())\n\n_outputs
+          = train(**_parsed_args)\n"], "image": "python:3.7"}}, "inputs": [{"name":
+          "epochs", "type": "Integer"}, {"name": "processed_train_images", "type":
+          "npy"}, {"name": "train_labels", "type": "npy"}], "name": "Train", "outputs":
+          [{"name": "model", "type": "zip"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"epochs": "{{inputs.parameters.epochs}}"}'}
+  - name: upload
+    container:
+      args: [--model, /tmp/inputs/model/data, --project-id, '{{inputs.parameters.project_id}}',
+        --bucket-name, '{{inputs.parameters.bucket_name}}', --gcs-path, '{{inputs.parameters.model_directory}}/{{workflow.creationTimestamp.Y}}{{workflow.creationTimestamp.m}}{{workflow.creationTimestamp.d}}{{workflow.creationTimestamp.H}}{{workflow.creationTimestamp.M}}{{workflow.creationTimestamp.S}}',
+        '----output-paths', /tmp/outputs/Output/data]
+      command:
+      - sh
+      - -ec
+      - |
+        program_path=$(mktemp)
+        printf "%s" "$0" > "$program_path"
+        python3 -u "$program_path" "$@"
+      - |
+        def upload(
+                model_path,
+                project_id,
+                bucket_name,
+                gcs_path
+        ):
+            import subprocess
+            import tempfile
+            import zipfile
+            import glob
+            import os
+            subprocess.run(['pip', 'install', 'google-cloud-storage'])
+            from google.cloud import storage as gcs
+
+            client = gcs.Client(project_id)
+            bucket = client.get_bucket(bucket_name)
+            blob_gcs = bucket.blob(gcs_path)
+
+            # e.g., /tmp/tmp-xxxx
+            model_dir = tempfile.mkdtemp()
+            with zipfile.ZipFile(model_path) as z:
+                z.extractall(model_dir)
+
+            for local_file in glob.glob(model_dir + '/**', recursive=True):
+                if os.path.isfile(local_file):
+                    # /{gcs_path}/model/saved_model.pb
+                    blob_gcs = bucket.blob(gcs_path+local_file.replace(model_dir, '/0001'))
+                    blob_gcs.upload_from_filename(local_file)
+
+            model_uri = f'gs://{bucket_name}/{gcs_path}'
+            print(f'Uploaded {model_path} to {model_uri}')
+            return model_uri
+
+        def _serialize_str(str_value: str) -> str:
+            if not isinstance(str_value, str):
+                raise TypeError('Value "{}" has type "{}" instead of str.'.format(str(str_value), str(type(str_value))))
+            return str_value
+
+        import argparse
+        _parser = argparse.ArgumentParser(prog='Upload', description='')
+        _parser.add_argument("--model", dest="model_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--project-id", dest="project_id", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--bucket-name", dest="bucket_name", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("--gcs-path", dest="gcs_path", type=str, required=True, default=argparse.SUPPRESS)
+        _parser.add_argument("----output-paths", dest="_output_paths", type=str, nargs=1)
+        _parsed_args = vars(_parser.parse_args())
+        _output_files = _parsed_args.pop("_output_paths", [])
+
+        _outputs = upload(**_parsed_args)
+
+        _outputs = [_outputs]
+
+        _output_serializers = [
+            _serialize_str,
+
+        ]
+
+        import os
+        for idx, output_file in enumerate(_output_files):
+            try:
+                os.makedirs(os.path.dirname(output_file))
+            except OSError:
+                pass
+            with open(output_file, 'w') as f:
+                f.write(_output_serializers[idx](_outputs[idx]))
+      image: python:3.7
+    inputs:
+      parameters:
+      - {name: bucket_name}
+      - {name: model_directory}
+      - {name: project_id}
+      artifacts:
+      - {name: train-model, path: /tmp/inputs/model/data}
+    outputs:
+      parameters:
+      - name: upload-Output
+        valueFrom: {path: /tmp/outputs/Output/data}
+      artifacts:
+      - {name: upload-Output, path: /tmp/outputs/Output/data}
+    metadata:
+      annotations: {pipelines.kubeflow.org/component_spec: '{"implementation": {"container":
+          {"args": ["--model", {"inputPath": "model"}, "--project-id", {"inputValue":
+          "project_id"}, "--bucket-name", {"inputValue": "bucket_name"}, "--gcs-path",
+          {"inputValue": "gcs_path"}, "----output-paths", {"outputPath": "Output"}],
+          "command": ["sh", "-ec", "program_path=$(mktemp)\nprintf \"%s\" \"$0\" >
+          \"$program_path\"\npython3 -u \"$program_path\" \"$@\"\n", "def upload(\n        model_path,\n        project_id,\n        bucket_name,\n        gcs_path\n):\n    import
+          subprocess\n    import tempfile\n    import zipfile\n    import glob\n    import
+          os\n    subprocess.run([''pip'', ''install'', ''google-cloud-storage''])\n    from
+          google.cloud import storage as gcs\n\n    client = gcs.Client(project_id)\n    bucket
+          = client.get_bucket(bucket_name)\n    blob_gcs = bucket.blob(gcs_path)\n\n    #
+          e.g., /tmp/tmp-xxxx\n    model_dir = tempfile.mkdtemp()\n    with zipfile.ZipFile(model_path)
+          as z:\n        z.extractall(model_dir)\n\n    for local_file in glob.glob(model_dir
+          + ''/**'', recursive=True):\n        if os.path.isfile(local_file):\n            #
+          /{gcs_path}/model/saved_model.pb\n            blob_gcs = bucket.blob(gcs_path+local_file.replace(model_dir,
+          ''/0001''))\n            blob_gcs.upload_from_filename(local_file)\n\n    model_uri
+          = f''gs://{bucket_name}/{gcs_path}''\n    print(f''Uploaded {model_path}
+          to {model_uri}'')\n    return model_uri\n\ndef _serialize_str(str_value:
+          str) -> str:\n    if not isinstance(str_value, str):\n        raise TypeError(''Value
+          \"{}\" has type \"{}\" instead of str.''.format(str(str_value), str(type(str_value))))\n    return
+          str_value\n\nimport argparse\n_parser = argparse.ArgumentParser(prog=''Upload'',
+          description='''')\n_parser.add_argument(\"--model\", dest=\"model_path\",
+          type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--project-id\",
+          dest=\"project_id\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--bucket-name\",
+          dest=\"bucket_name\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"--gcs-path\",
+          dest=\"gcs_path\", type=str, required=True, default=argparse.SUPPRESS)\n_parser.add_argument(\"----output-paths\",
+          dest=\"_output_paths\", type=str, nargs=1)\n_parsed_args = vars(_parser.parse_args())\n_output_files
+          = _parsed_args.pop(\"_output_paths\", [])\n\n_outputs = upload(**_parsed_args)\n\n_outputs
+          = [_outputs]\n\n_output_serializers = [\n    _serialize_str,\n\n]\n\nimport
+          os\nfor idx, output_file in enumerate(_output_files):\n    try:\n        os.makedirs(os.path.dirname(output_file))\n    except
+          OSError:\n        pass\n    with open(output_file, ''w'') as f:\n        f.write(_output_serializers[idx](_outputs[idx]))\n"],
+          "image": "python:3.7"}}, "inputs": [{"name": "model", "type": "zip"}, {"name":
+          "project_id", "type": "String"}, {"name": "bucket_name", "type": "String"},
+          {"name": "gcs_path", "type": "String"}], "name": "Upload", "outputs": [{"name":
+          "Output", "type": "String"}]}', pipelines.kubeflow.org/component_ref: '{}',
+        pipelines.kubeflow.org/arguments.parameters: '{"bucket_name": "{{inputs.parameters.bucket_name}}",
+          "gcs_path": "{{inputs.parameters.model_directory}}/{{workflow.creationTimestamp.Y}}{{workflow.creationTimestamp.m}}{{workflow.creationTimestamp.d}}{{workflow.creationTimestamp.H}}{{workflow.creationTimestamp.M}}{{workflow.creationTimestamp.S}}",
+          "project_id": "{{inputs.parameters.project_id}}"}'}
+  arguments:
+    parameters:
+    - {name: project_id}
+    - {name: bucket_name}
+    - {name: epochs, value: '5'}
+    - {name: threshold, value: '0.8'}
+    - {name: model_directory, value: kfp}
+  serviceAccountName: pipeline-runner

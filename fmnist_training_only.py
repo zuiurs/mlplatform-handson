@@ -16,7 +16,7 @@ def load_data(
     subprocess.run(['pip', 'install', 'numpy'])
     import numpy as np
 
-    # Write code here!
+    # TODO: Write code here!
     print('Write code here!')
 
     # Rename to OutputPath
@@ -46,7 +46,7 @@ def preprocess(
     train_images = np.load(train_images_path)
     test_images = np.load(test_images_path)
 
-    # Write code here!
+    # TODO: Write code here!
     print('Write code and pass processed image properly via OutputPath here!')
 
 
@@ -62,7 +62,7 @@ def train(
     import glob
     import tempfile
 
-    # Write code here!
+    # TODO: Write code here!
     print('Write code here!')
 
     # Save model
@@ -99,7 +99,7 @@ def evaluate(
 
     model = keras.models.load_model(model_dir)
 
-    # Write code here!
+    # TODO: Write code here!
     print('Write code and print loss/acc here!')
 
 
@@ -110,9 +110,9 @@ def evaluate(
 def pipeline(
         epochs='5'
 ):
-    # Write code here!
+    # TODO: Write code here!
     print('Write code here!')
 
 
 if __name__ == '__main__':
-    kfp.compiler.Compiler().compile(pipeline, 'fmnist_training_only.yaml')
+    kfp.compiler.Compiler().compile(pipeline, os.path.splitext(__file__)[0] + '.yaml')

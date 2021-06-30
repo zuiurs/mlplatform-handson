@@ -20,8 +20,7 @@ def load_data(
     fashion_mnist = keras.datasets.fashion_mnist
     (train_images, train_labels), (test_images, test_labels) = fashion_mnist.load_data()
 
-    # np.save() will automatically give the extension .npy,
-    # so change it back to match OutputPath.
+    # Rename to OutputPath
     np.save(train_images_path, train_images)
     os.rename(f'{train_images_path}.npy', train_images_path)
     np.save(train_labels_path, train_labels)
@@ -107,8 +106,7 @@ def train(
         print(f)
 
     shutil.make_archive('model', 'zip', root_dir=model_dir)
-    # shutil.make_archive() will automatically give the extension .zip,
-    # so change it back to match OutputPath.
+    # Rename to OutputPath
     shutil.move('model.zip', model_path)
 
 
@@ -144,7 +142,6 @@ def evaluate(
   description='This pipeline provides Training/Serving for Fashion MNIST'
 )
 def pipeline(
-        # If defined as int, it will occur warning.
         epochs='5'
 ):
     load_data_op = load_data()
@@ -168,4 +165,4 @@ def pipeline(
 
 
 if __name__ == '__main__':
-    kfp.compiler.Compiler().compile(pipeline, 'fmnist_training_only_full.yaml')
+    kfp.compiler.Compiler().compile(pipeline, os.path.splitext(__file__)[0] + '.yaml')

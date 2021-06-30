@@ -1,0 +1,12 @@
+apiVersion: kubeflow.org/v1beta1
+kind: Profile
+metadata:
+  name: handson
+spec:
+  owner:
+    kind: User
+    name: urushida@example.com
+  plugins:
+    - kind: WorkloadIdentity
+      spec:
+        gcpServiceAccount: handson-gcs@ca-saiyo-infra-handson.iam.gserviceaccount.com

@@ -42,3 +42,5 @@ spec:
  rules:
  - {}
 ```
+
+追記: knative-serving の Activator でも同様のことが起こり、急ぎの対処として同じく全許可ポリシーを当てている。

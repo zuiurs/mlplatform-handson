@@ -17067,3 +17067,13 @@ metadata:
 spec:
  rules:
  - {}
+
+---
+apiVersion: security.istio.io/v1beta1
+kind: AuthorizationPolicy
+metadata:
+  name: deprecated-allow-all
+  namespace: knative-serving
+spec:
+ rules:
+ - {}

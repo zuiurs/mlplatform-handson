@@ -1,3 +1,4 @@
+import os
 import kfp
 from kfp import dsl
 from kfp.components import func_to_container_op
@@ -39,4 +40,4 @@ def pipeline(
 
 
 if __name__ == '__main__':
-    kfp.compiler.Compiler().compile(pipeline, 'sample.yaml')
+    kfp.compiler.Compiler().compile(pipeline, os.path.splitext(__file__)[0] + '.yaml')

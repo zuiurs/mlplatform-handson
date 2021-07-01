@@ -1,3 +1,4 @@
+import os
 import kfp
 from kfp import dsl
 from kfp.components import func_to_container_op
@@ -146,7 +147,7 @@ def check(
         threshold: str
 ) -> bool:
     print(f'check start')
-    print(f'{accuracy} > {threshold} -> {accuracy > float(threshold)')
+    print(f'{accuracy} > {threshold} -> {accuracy > float(threshold)}')
     return accuracy > float(threshold)
 
 
@@ -221,12 +222,12 @@ def pipeline(
 
     # TODO: Call check component
 
-    today = '{{workflow.creationTimestamp.Y}}'
-            + '{{workflow.creationTimestamp.m}}'
-            + '{{workflow.creationTimestamp.d}}'
-            + '{{workflow.creationTimestamp.H}}'
-            + '{{workflow.creationTimestamp.M}}'
-            + '{{workflow.creationTimestamp.S}}'
+    today = ('{{workflow.creationTimestamp.Y}}'
+             '{{workflow.creationTimestamp.m}}'
+             '{{workflow.creationTimestamp.d}}'
+             '{{workflow.creationTimestamp.H}}'
+             '{{workflow.creationTimestamp.M}}'
+             '{{workflow.creationTimestamp.S}}')
     dir_name = '{}/{}'.format(model_directory, today)
 
     upload_op = upload(

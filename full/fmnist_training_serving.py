@@ -1,3 +1,4 @@
+import os
 import kfp
 from kfp import dsl
 from kfp.components import func_to_container_op
@@ -146,7 +147,7 @@ def check(
         threshold: str
 ) -> bool:
     print(f'check start')
-    print(f'{accuracy} > {threshold} -> {accuracy > float(threshold)')
+    print(f'{accuracy} > {threshold} -> {accuracy > float(threshold)}')
     return accuracy > float(threshold)
 
 
@@ -219,15 +220,15 @@ def pipeline(
             test_labels=load_data_op.outputs['test_labels']
     )
 
-    check_task = check(eval_task.output, threshold)
+    check_op = check(eval_op.output, threshold)
 
-    with dsl.Condition(check_task.output == True):
-        today = '{{workflow.creationTimestamp.Y}}'
-                + '{{workflow.creationTimestamp.m}}'
-                + '{{workflow.creationTimestamp.d}}'
-                + '{{workflow.creationTimestamp.H}}'
-                + '{{workflow.creationTimestamp.M}}'
-                + '{{workflow.creationTimestamp.S}}'
+    with dsl.Condition(check_op.output == True):
+        today = ('{{workflow.creationTimestamp.Y}}'
+                 '{{workflow.creationTimestamp.m}}'
+                 '{{workflow.creationTimestamp.d}}'
+                 '{{workflow.creationTimestamp.H}}'
+                 '{{workflow.creationTimestamp.M}}'
+                 '{{workflow.creationTimestamp.S}}')
         dir_name = '{}/{}'.format(model_directory, today)
 
         upload_op = upload(
@@ -240,8 +241,8 @@ def pipeline(
         kfserving_op(
                 action='apply',
                 model_name='fmnist',
-                model_uri=upload_task.output,
-                namespace='dev',
+                model_uri=upload_op.output,
+                namespace='handson',
                 framework='tensorflow',
                 service_account='default-editor'
         )

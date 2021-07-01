@@ -1,3 +1,4 @@
+import os
 import kfp
 from kfp import dsl
 from kfp.components import func_to_container_op

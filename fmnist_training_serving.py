@@ -186,7 +186,7 @@ def upload(
     return model_uri
 
 
-kfserving_op = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/'
+deploy_kfserving = load_component_from_url('https://raw.githubusercontent.com/kubeflow/pipelines/'
                                        'master/components/kubeflow/kfserving/component.yaml')
 
 
